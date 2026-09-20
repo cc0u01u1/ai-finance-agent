@@ -1,5 +1,10 @@
 
-import mlflow
+try:
+    import mlflow
+except ImportError:
+    # 云端部署可免装 mlflow（仅 MLflow 可观测性功能需要；
+    # log_and_handle_error 等其他功能不依赖它）。
+    mlflow = None
 import time
 import asyncio
 from typing import Any, Optional, Dict
@@ -19,6 +24,8 @@ class MLflowTracker:
 
     @classmethod
     def initialize(cls):
+        if mlflow is None:
+            raise RuntimeError("mlflow 未安装，无法启用 MLflow 可观测性追踪。")
         if not cls._initialized:
             mlflow.set_tracking_uri(settings.MLFLOW_TRACKING_URI)
             mlflow.set_experiment(settings.MLFLOW_EXPERIMENT_NAME)

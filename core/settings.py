@@ -1,9 +1,8 @@
 import os
 from typing import Optional
-from pydantic_ai.models.google import GoogleModel
-from pydantic_ai.providers.ollama import OllamaProvider
-from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.models.openai import OpenAIChatModel
+
+# 注意：pydantic_ai 的模型/提供者依赖按需在 get_model() 内延迟导入，
+# 这样云端只需安装实际使用的模型 SDK（如 openai），不必安装 google-genai。
 
 
 class Settings:
@@ -27,6 +26,11 @@ class Settings:
     @property
     def OPENAI_MODEL(self) -> str:
         return os.getenv('OPENAI_MODEL', 'gpt-4o')
+
+    @property
+    def OPENAI_BASE_URL(self) -> Optional[str]:
+        # 可选：OpenAI 兼容端点（如 DeepSeek: https://api.deepseek.com/v1）
+        return os.getenv('OPENAI_BASE_URL')
 
     @property
     def GEMINI_MODEL(self) -> str:
@@ -57,6 +61,8 @@ class Settings:
         provider = (override_provider or self.MODEL_PROVIDER).lower()
         
         if provider in ['gemini', 'google']:
+            from pydantic_ai.models.google import GoogleModel
+
             api_key = self.GEMINI_API_KEY or os.getenv('GOOGLE_API_KEY')
             if not api_key:
                 # We return a string here to let Pydantic AI try to find it in the env
@@ -64,7 +70,10 @@ class Settings:
                 return GoogleModel(self.GEMINI_MODEL)
             return GoogleModel(self.GEMINI_MODEL, api_key=api_key)
             
-        elif provider == 'ollama':            
+        elif provider == 'ollama':
+            from pydantic_ai.providers.ollama import OllamaProvider
+            from pydantic_ai.models.openai import OpenAIChatModel
+
             base_url = self.OLLAMA_BASE_URL
             if 'ollama.com' in base_url.lower() and not base_url.endswith('/v1'):
                 base_url = base_url.rstrip('/') + '/v1'
@@ -76,14 +85,23 @@ class Settings:
             return OpenAIChatModel(self.OLLAMA_MODEL, provider=provider_inst)
             
         elif provider == 'openai':
+            from pydantic_ai.providers.openai import OpenAIProvider
+            from pydantic_ai.models.openai import OpenAIChatModel
+
             if self.OPENAI_API_KEY:
-                # Pydantic AI 1.x: key goes through the provider
-                provider_inst = OpenAIProvider(api_key=self.OPENAI_API_KEY)
+                # Pydantic AI 1.x：key 通过 provider 传入；
+                # base_url 可选，用于 DeepSeek 等 OpenAI 兼容端点。
+                provider_kwargs = {'api_key': self.OPENAI_API_KEY}
+                if self.OPENAI_BASE_URL:
+                    provider_kwargs['base_url'] = self.OPENAI_BASE_URL
+                provider_inst = OpenAIProvider(**provider_kwargs)
                 return OpenAIChatModel(self.OPENAI_MODEL, provider=provider_inst)
             return f'openai:{self.OPENAI_MODEL}'
-            
+
         else:
             # Default fallback to Gemini
+            from pydantic_ai.models.google import GoogleModel
+
             api_key = self.GEMINI_API_KEY or os.getenv('GOOGLE_API_KEY')
             return GoogleModel(self.GEMINI_MODEL, api_key=api_key)
 
